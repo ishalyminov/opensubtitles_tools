@@ -11,6 +11,9 @@ from xml.sax import SAXException, make_parser
 from pandas import DataFrame
 
 WORD_RE = compile('\w+')
+MAX_SENTENCE_LENGTH = 60
+DIGIT_RE = '^\-?\d+((\.|\,)\d+)?$'
+TESTSET_RATIO = 0.1
 
 
 class OpenSubtitlesHandler(ContentHandler):
@@ -43,6 +46,10 @@ def process_sentences(in_sentences):
             token.lower()
             for token in sentence
             if WORD_RE.match(token)
+        ]
+        sentence_filtered = [
+            re.sub(DIGIT_RE, '<DIGIT>', token)
+            for token in sentence_filtered
         ]
         if len(sentence_filtered):
             sentences_filtered.append(sentence_filtered)
@@ -100,33 +107,7 @@ def group_texts_into_qa_pairs(in_documents):
     for doc in in_documents:
         for question, answer in zip(doc[::2], doc[1::2]):
             qa_data.append((question, answer))
-
-    shuffle(qa_data)
     return qa_data
-
-
-def prepare_seq2seq_files(in_processed_docs, in_result_path):
-    if not path.exists(in_result_path):
-        makedirs(in_result_path)
-
-    qa_data = group_texts_into_qa_pairs(in_processed_docs)
-    
-    trainset_size = int((1 - TESTSET_SIZE_RATIO) * len(qa_data))
-    qa_train, qa_test = qa_data[:trainset_size], qa_data[trainset_size:]
-
-    # open files
-    with \
-        open(path.join(in_result_path, 'train.enc'), 'w') as train_enc, \
-        open(path.join(in_result_path, 'train.dec'), 'w') as train_dec, \
-        open(path.join(in_result_path, 'test.enc'), 'w') as test_enc, \
-        open(path.join(in_result_path, 'test.dec'), 'w') as test_dec:
-
-        for question_train, answer_train in qa_train:
-            print >>train_enc, ' '.join(question_train).encode('utf-8')
-            print >>train_dec, ' '.join(answer_train).encode('utf-8')
-        for question_test, answer_test in qa_test:
-            print >>test_enc, ' '.join(question_test).encode('utf-8')
-            print >>test_dec, ' '.join(answer_test).encode('utf-8')
 
 
 def save_csv(in_qa_pairs, in_result_filename):
@@ -140,20 +121,43 @@ def save_csv(in_qa_pairs, in_result_filename):
     )
 
 
-def main(in_opensubs_root, in_result_file):
+def save_easy_seq2seq(in_qa_pairs, in_result_folder):
+    train_enc = path.join(in_result_folder, 'train.enc')
+    train_dec = path.join(in_result_folder, 'train.dec')
+    test_enc = path.join(in_result_folder, 'test.enc')
+    test_dec = path.join(in_result_folder, 'test.dec')
+
+    shuffle(in_qa_pairs)
+    testset_size = int(TESTSET_RATIO * len(in_qa_pairs))
+    train_set, test_set = (
+        in_qa_pairs[:-testset_size],
+        in_qa_pairs[-testset_size:]
+    )
+    with getwriter('utf-8')(open(train_enc, 'w')) as train_enc_out:
+        with getwriter('utf-8')(open(train_dec, 'w')) as train_dec_out:
+            for question, answer in train_set:
+                print >>train_enc_out, question
+                print >> train_dec_out, answer
+    with getwriter('utf-8')(open(test_enc, 'w')) as test_enc_out:
+        with getwriter('utf-8')(open(test_dec, 'w')) as test_dec_out:
+            for question, answer in test_set:
+                print >>test_enc_out, question
+                print >> test_dec_out, answer
+
+
+def main(in_opensubs_root, in_result_folder):
     parsed_texts = parse_corpus(in_opensubs_root)
     qa_pairs = group_texts_into_qa_pairs(parsed_texts.values())
-    qa_pairs_joined = [
-        (' '.join(question), ' '.join(answer))
-        for question, answer in qa_pairs
-    ]
-    save_csv(qa_pairs_joined, in_result_file)
+    # save_csv(qa_pairs_joined, in_result_file)
+    save_easy_seq2seq(qa_pairs, in_result_folder)
 
- 
+
 if __name__ == '__main__':
     if len(argv) < 3:
-        print 'Usage: opensubtitles_processing.py <OpenSubtitles corpus root> <result file>' 
+        print 'Usage: {} <OpenSubtitles corpus root> <result folder>'.format(
+            argv[0]
+        )
         exit()
-    opensubs_root, result_file = argv[1:3]
-    main(opensubs_root, result_file)
+    opensubs_root, result_folder = argv[1:3]
+    main(opensubs_root, result_folder)
 
