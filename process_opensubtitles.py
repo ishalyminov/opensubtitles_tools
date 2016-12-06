@@ -5,11 +5,16 @@ from random import shuffle
 from sys import argv
 import re
 from codecs import getwriter
+import logging
 
 from xml.sax.handler import ContentHandler
 from xml.sax import SAXException, make_parser
 
 from pandas import DataFrame
+
+logging.basicConfig(format='[%(asctime)s] %(levelname)s: %(message)s')
+logger = logging.getLogger(__name__)
+logger.setLevel('INFO')
 
 WORD_RE = re.compile('\w+')
 MAX_SENTENCE_LENGTH = 60
@@ -58,15 +63,22 @@ def process_sentences(in_sentences):
 
 
 def parse_corpus(text_root):
+    documents_number = sum([
+        len(files)
+        for root, dirs, files in walk(text_root)
+    ])
     handler = OpenSubtitlesHandler()
     parser = make_parser()
     parser.setContentHandler(handler)
 
     parsed_corpus = {}
+    index = 0
     for root, dirs, files in walk(text_root):
         for filename in files:
             if not filename.endswith('xml'):
                 continue
+            index += 1
+            logger.info('Processing file {} of {}'.format(index, documents_number))
             full_filename = path.join(root, filename)
             parser.parse(full_filename)
             parsed_corpus[full_filename] = process_sentences(handler.sentences)
@@ -93,28 +105,26 @@ def save_csv(in_qa_pairs, in_result_filename):
     )
 
 
-def save_easy_seq2seq(in_qa_pairs, in_result_folder):
-    train_enc = path.join(in_result_folder, 'train.enc')
-    train_dec = path.join(in_result_folder, 'train.dec')
-    test_enc = path.join(in_result_folder, 'test.enc')
-    test_dec = path.join(in_result_folder, 'test.dec')
+def save_encoder_decoder_files(in_qa_pairs, in_output_folder, in_dataset_name):
+    enc_file = path.join(in_output_folder, in_dataset_name + '.enc')
+    dec_file = path.join(in_output_folder, in_dataset_name + '.dec')
 
+    with getwriter('utf-8')(open(enc_file, 'w')) as enc_out:
+        with getwriter('utf-8')(open(dec_file, 'w')) as dec_out:
+            for question, answer in in_qa_pairs:
+                print >>enc_out, ' '.join(question)
+                print >>dec_out, ' '.join(answer)
+
+
+def save_easy_seq2seq(in_qa_pairs, in_result_folder):
     shuffle(in_qa_pairs)
     testset_size = int(TESTSET_RATIO * len(in_qa_pairs))
     train_set, test_set = (
         in_qa_pairs[:-testset_size],
         in_qa_pairs[-testset_size:]
     )
-    with getwriter('utf-8')(open(train_enc, 'w')) as train_enc_out:
-        with getwriter('utf-8')(open(train_dec, 'w')) as train_dec_out:
-            for question, answer in train_set:
-                print >>train_enc_out, ' '.join(question)
-                print >> train_dec_out, ' '.join(answer)
-    with getwriter('utf-8')(open(test_enc, 'w')) as test_enc_out:
-        with getwriter('utf-8')(open(test_dec, 'w')) as test_dec_out:
-            for question, answer in test_set:
-                print >>test_enc_out, ' '.join(question)
-                print >> test_dec_out, ' '.join(answer)
+    save_encoder_decoder_files(train_set, in_result_folder, 'train')
+    save_encoder_decoder_files(test_set, in_result_folder, 'test')
 
 
 def main(in_opensubs_root, in_result_folder):
