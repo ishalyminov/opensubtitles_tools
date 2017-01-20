@@ -93,7 +93,7 @@ def sentences_to_qa_pairs(in_sentences):
             len(question) < MAX_QUESTION_LENGTH and
             len(answer) < MAX_ANSWER_LENGTH
         ):
-            qa_data.append((question, answer))
+            qa_data.append((' '.join(question), ' '.join(answer)))
     return qa_data
 
 
