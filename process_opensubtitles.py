@@ -17,7 +17,8 @@ logger = logging.getLogger(__name__)
 logger.setLevel('INFO')
 
 WORD_RE = re.compile('\w+')
-MAX_SENTENCE_LENGTH = 60
+MAX_QUESTION_LENGTH = 60
+MAX_ANSWER_LENGTH = 60
 DIGIT_RE = re.compile('^\-?\d+((\.|\,)\d+)?$')
 TESTSET_RATIO = 0.1
 
@@ -89,7 +90,10 @@ def group_texts_into_qa_pairs(in_documents):
     qa_data = []
     for doc in in_documents:
         for question, answer in zip(doc, doc[1:]):
-            if len(question) < MAX_SENTENCE_LENGTH and len(answer) < MAX_SENTENCE_LENGTH:
+            if (
+                len(question) < MAX_QUESTION_LENGTH and
+                len(answer) < MAX_ANSWER_LENGTH
+            ):
                 qa_data.append((question, answer))
     return qa_data
 
@@ -127,6 +131,16 @@ def save_easy_seq2seq(in_qa_pairs, in_result_folder):
     save_encoder_decoder_files(test_set, in_result_folder, 'test')
 
 
+def build_argument_parser():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('corpus_root', help='OpenSubtitles corpus root')
+    parser.add_argument('output_folder', help='Output folder')
+
+    parser.add_argument('--max-question-length', default=MAX_QUESTION_LENGTH)
+    parser.add_argument('--max-answer-length', default=MAX_ANSWER_LENGTH)
+    return parser
+
+
 def main(in_opensubs_root, in_result_folder):
     if not path.exists(in_result_folder):
         makedirs(in_result_folder)
@@ -137,11 +151,8 @@ def main(in_opensubs_root, in_result_folder):
 
 
 if __name__ == '__main__':
-    if len(argv) < 3:
-        print 'Usage: {} <OpenSubtitles corpus root> <result folder>'.format(
-            argv[0]
-        )
-        exit()
-    opensubs_root, result_folder = argv[1:3]
-    main(opensubs_root, result_folder)
-
+    parser - build_argument_parser()
+    options, args = parser.parse_args()
+    MAX_QUESTION_LENGTH = options.max_question_length
+    MAX_ANSWER_LENGTH = options.max_answer_length
+    main(args.corpus_root, args.output_folder)
