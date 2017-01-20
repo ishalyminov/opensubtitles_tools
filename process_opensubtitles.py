@@ -1,19 +1,20 @@
 from os import path, makedirs, walk
 from collections import defaultdict
 from operator import itemgetter
-from random import shuffle
+from random import shuffle, choice
 from sys import argv
 import re
 from codecs import getwriter
 import logging
-import argparse
+from argparse import ArgumentParser
+import string
 
 from xml.sax.handler import ContentHandler
 from xml.sax import SAXException, make_parser
 
 from pandas import DataFrame
 
-from task_list import tasks
+from task_list import tasks, execute_tasks, add_task
 
 logging.basicConfig(format='[%(asctime)s] %(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
@@ -68,9 +69,9 @@ def process_sentences(in_sentences):
 
 
 def process_document_callback(in_params):
-    input_file, output_file, max_len = in_params
+    input_file, output_file = in_params
     logger.info('Processing file {}'.format(input_file))
-    sentences = parse_document(text_in)
+    sentences = parse_document(input_file)
     sentences_processed = process_sentences(sentences)
     qa_pairs = sentences_to_qa_pairs(sentences_processed)
     save_csv(qa_pairs, output_file)
@@ -132,17 +133,15 @@ def save_easy_seq2seq(in_qa_pairs, in_result_folder):
 def collect_tasks(in_src_root, in_dst_root):
     for root, dirs, files in walk(in_src_root):
         for filename in files:
-            if not filename.startswith('RC'):
-                continue
             full_filename = path.join(root, filename)
             result_filename = \
                 path.join(in_dst_root, filename) + \
-                ''.join([random.choose(string.ascii) for _ in xrange(16)])
+                ''.join([choice(string.ascii_letters) for _ in xrange(16)])
             add_task((full_filename, result_filename))
 
 
 def build_argument_parser():
-    parser = argparse.ArgumentParser()
+    parser = ArgumentParser()
     parser.add_argument('corpus_root', help='OpenSubtitles corpus root')
     parser.add_argument('output_folder', help='Output folder')
 
@@ -169,16 +168,17 @@ def main(
         makedirs(in_result_folder)
     collect_tasks(in_opensubs_root, in_result_folder)
     logger.info('got {} tasks'.format(len(tasks)))
-    if 1 < in_tasks_number:
-        retcodes = execute_tasks(in_callback, in_tasks_number)
+    if 1 < JOBS_NUMBER:
+        retcodes = execute_tasks(in_callback, JOBS_NUMBER)
     else:
         retcodes = [in_callback(task) for task in tasks]
 
 
 if __name__ == '__main__':
     parser = build_argument_parser()
-    options, args = parser.parse_args()
-    MAX_QUESTION_LENGTH = options.max_question_length
-    MAX_ANSWER_LENGTH = options.max_answer_length
-    JOBS_NUMBER = options.jobs
+    args = parser.parse_args()
+    MAX_QUESTION_LENGTH = args.max_question_length
+    MAX_ANSWER_LENGTH = args.max_answer_length
+    JOBS_NUMBER = args.jobs
     main(args.corpus_root, args.output_folder)
+
