@@ -13,6 +13,8 @@ from xml.sax import SAXException, make_parser
 
 from pandas import DataFrame
 
+from task_list import tasks
+
 logging.basicConfig(format='[%(asctime)s] %(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 logger.setLevel('INFO')
@@ -20,6 +22,7 @@ logger.setLevel('INFO')
 WORD_RE = re.compile('\w+')
 MAX_QUESTION_LENGTH = 60
 MAX_ANSWER_LENGTH = 60
+JOBS_NUMBER = 32
 DIGIT_RE = re.compile('^\-?\d+((\.|\,)\d+)?$')
 TESTSET_RATIO = 0.1
 
@@ -64,38 +67,32 @@ def process_sentences(in_sentences):
     return sentences_filtered
 
 
-def parse_corpus(text_root):
-    documents_number = sum([
-        len(files)
-        for root, dirs, files in walk(text_root)
-    ])
+def process_document_callback(in_params):
+    input_file, output_file, max_len = in_params
+    logger.info('Processing file {}'.format(input_file))
+    sentences = parse_document(text_in)
+    sentences_processed = process_sentences(sentences)
+    qa_pairs = sentences_to_qa_pairs(sentences_processed)
+    save_csv(qa_pairs, output_file)
+
+
+def parse_document(in_filename):
     handler = OpenSubtitlesHandler()
     parser = make_parser()
     parser.setContentHandler(handler)
 
-    parsed_corpus = {}
-    index = 0
-    for root, dirs, files in walk(text_root):
-        for filename in files:
-            if not filename.endswith('xml'):
-                continue
-            index += 1
-            logger.info('Processing file {} of {}'.format(index, documents_number))
-            full_filename = path.join(root, filename)
-            parser.parse(full_filename)
-            parsed_corpus[full_filename] = process_sentences(handler.sentences)
-    return parsed_corpus
+    parser.parse(in_filename)
+    return handler.sentences
 
 
-def group_texts_into_qa_pairs(in_documents):
+def sentences_to_qa_pairs(in_sentences):
     qa_data = []
-    for doc in in_documents:
-        for question, answer in zip(doc, doc[1:]):
-            if (
-                len(question) < MAX_QUESTION_LENGTH and
-                len(answer) < MAX_ANSWER_LENGTH
-            ):
-                qa_data.append((question, answer))
+    for question, answer in zip(in_sentences, in_sentences[1:]):
+        if (
+            len(question) < MAX_QUESTION_LENGTH and
+            len(answer) < MAX_ANSWER_LENGTH
+        ):
+            qa_data.append((question, answer))
     return qa_data
 
 
@@ -132,23 +129,50 @@ def save_easy_seq2seq(in_qa_pairs, in_result_folder):
     save_encoder_decoder_files(test_set, in_result_folder, 'test')
 
 
+def collect_tasks(in_src_root, in_dst_root):
+    for root, dirs, files in walk(in_src_root):
+        for filename in files:
+            if not filename.startswith('RC'):
+                continue
+            full_filename = path.join(root, filename)
+            result_filename = \
+                path.join(in_dst_root, filename) + \
+                ''.join([random.choose(string.ascii) for _ in xrange(16)])
+            add_task((full_filename, result_filename))
+
+
 def build_argument_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument('corpus_root', help='OpenSubtitles corpus root')
     parser.add_argument('output_folder', help='Output folder')
 
-    parser.add_argument('--max-question-length', default=MAX_QUESTION_LENGTH)
-    parser.add_argument('--max-answer-length', default=MAX_ANSWER_LENGTH)
+    parser.add_argument(
+        '--max_question_length',
+        type=int,
+        default=MAX_QUESTION_LENGTH
+    )
+    parser.add_argument(
+        '--max_answer_length',
+        type=int,
+        default=MAX_ANSWER_LENGTH
+    )
+    parser.add_argument('--jobs', type=int, default=JOBS_NUMBER)
     return parser
 
 
-def main(in_opensubs_root, in_result_folder):
+def main(
+    in_opensubs_root,
+    in_result_folder,
+    in_callback=process_document_callback
+):
     if not path.exists(in_result_folder):
         makedirs(in_result_folder)
-    parsed_texts = parse_corpus(in_opensubs_root)
-    qa_pairs = group_texts_into_qa_pairs(parsed_texts.values())
-    # save_csv(qa_pairs_joined, in_result_file)
-    save_easy_seq2seq(qa_pairs, in_result_folder)
+    collect_tasks(in_opensubs_root, in_result_folder)
+    logger.info('got {} tasks'.format(len(tasks)))
+    if 1 < in_tasks_number:
+        retcodes = execute_tasks(in_callback, in_tasks_number)
+    else:
+        retcodes = [in_callback(task) for task in tasks]
 
 
 if __name__ == '__main__':
@@ -156,4 +180,5 @@ if __name__ == '__main__':
     options, args = parser.parse_args()
     MAX_QUESTION_LENGTH = options.max_question_length
     MAX_ANSWER_LENGTH = options.max_answer_length
+    JOBS_NUMBER = options.jobs
     main(args.corpus_root, args.output_folder)
