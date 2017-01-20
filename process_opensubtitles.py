@@ -6,6 +6,7 @@ from sys import argv
 import re
 from codecs import getwriter
 import logging
+import argparse
 
 from xml.sax.handler import ContentHandler
 from xml.sax import SAXException, make_parser
@@ -151,7 +152,7 @@ def main(in_opensubs_root, in_result_folder):
 
 
 if __name__ == '__main__':
-    parser - build_argument_parser()
+    parser = build_argument_parser()
     options, args = parser.parse_args()
     MAX_QUESTION_LENGTH = options.max_question_length
     MAX_ANSWER_LENGTH = options.max_answer_length
